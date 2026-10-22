@@ -128,7 +128,7 @@ def get_contract_values(contract, admin_address, owner_address):
     ).call()
 
     # The name of this function must match contract_info.json
-    prime = contract.functions.getPrime(
+    prime = contract.functions.getPrimeByOwner(
         Web3.to_checksum_address(owner_address)
     ).call()
 
