@@ -114,13 +114,15 @@ contract AMM is AccessControl{
 	/*
 		Use the ERC20 transferFrom to "pull" amtA of tokenA and amtB of tokenB from the sender
 	*/
-	function provideLiquidity( uint256 amtA, uint256 amtB ) public {
-		require( amtA > 0 || amtB > 0, 'Cannot provide 0 liquidity' );
-		//YOUR CODE HERE
+	
+function provideLiquidity(
+    uint256 amtA,
+    uint256 amtB
+) public {
     require(
-            hasRole(LP_ROLE, msg.sender),
-            "Not liquidity provider"
-        );
+        amtA > 0 || amtB > 0,
+        "Cannot provide 0 liquidity"
+    );
 
     if (amtA > 0) {
         require(
@@ -147,8 +149,9 @@ contract AMM is AccessControl{
     invariant =
         ERC20(tokenA).balanceOf(address(this)) *
         ERC20(tokenB).balanceOf(address(this));
-		emit LiquidityProvision( msg.sender, amtA, amtB );
-	}
+
+    emit LiquidityProvision(msg.sender, amtA, amtB);
+}
 
 	/*
 		Use the ERC20 transfer function to send amtA of tokenA and amtB of tokenB to the target recipient
