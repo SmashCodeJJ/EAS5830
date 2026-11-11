@@ -91,6 +91,7 @@ contract Attacker is AccessControl, IERC777Recipient {
         // Bank clears the original balance
         bank.claimAll();
     }
+}
 
 }
 
