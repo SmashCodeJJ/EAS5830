@@ -31,55 +31,51 @@ contract AMM is AccessControl{
     }
 
 
-	function getTokenAddress( uint256 index ) public view returns(address) {
-		require( index < 2, 'Only two tokens' );
-		if( index == 0 ) {
-			return tokenA;
-		} else {
-			return tokenB;
-		}
-	}
+	function tradeTokens(
+    address sellToken,
+    uint256 sellAmount
+) public {
+    require(invariant > 0, "Invariant must be nonzero");
+    require(
+        sellToken == tokenA || sellToken == tokenB,
+        "Invalid token"
+    );
+    require(sellAmount > 0, "Cannot trade 0");
 
-	/*
-		The main trading functions
-		
-		User provides sellToken and sellAmount
+    // Get current pool balances
+    uint256 qtyA = ERC20(tokenA).balanceOf(address(this));
+    uint256 qtyB = ERC20(tokenB).balanceOf(address(this));
 
-		The contract must calculate buyAmount using the formula:
-	*/
-	function tradeTokens( address sellToken, uint256 sellAmount ) public {
-		require( invariant > 0, 'Invariant must be nonzero' );
-		require( sellToken == tokenA || sellToken == tokenB, 'Invalid token' );
-		require( sellAmount > 0, 'Cannot trade 0' );
-		require( invariant > 0, 'No liquidity' );
-		uint256 qtyA;
-		uint256 qtyB;
-		uint256 swapAmt;
+    // Declare variables
+    uint256 swapAmt;
+    address buyToken;
+    uint256 reserveIn;
+    uint256 reserveOut;
 
-		//YOUR CODE HERE 
+    // Determine which token is being sold
     if (sellToken == tokenA) {
-            buyToken = tokenB;
-            reserveIn = qtyA;
-            reserveOut = qtyB;
-        } else {
-            buyToken = tokenA;
-            reserveIn = qtyB;
-            reserveOut = qtyA;
-        }
+        buyToken = tokenB;
+        reserveIn = qtyA;
+        reserveOut = qtyB;
+    } else {
+        buyToken = tokenA;
+        reserveIn = qtyB;
+        reserveOut = qtyA;
+    }
 
-    // Apply trading fee (3 basis points)
+    // Calculate input after fee
     uint256 amountAfterFee =
         sellAmount * (10000 - feebps) / 10000;
 
-    // Calculate output using constant-product formula
-    uint256 swapAmt =
+    // Constant product AMM formula
+    swapAmt =
         reserveOut * amountAfterFee /
         (reserveIn + amountAfterFee);
 
     require(swapAmt > 0, "Swap amount too small");
     require(swapAmt < reserveOut, "Insufficient liquidity");
 
-    // Receive tokens from trader
+    // Pull tokens from the trader
     require(
         ERC20(sellToken).transferFrom(
             msg.sender,
@@ -89,9 +85,12 @@ contract AMM is AccessControl{
         "Input transfer failed"
     );
 
-    // Send purchased tokens to trader
+    // Send output tokens to the trader
     require(
-        ERC20(buyToken).transfer(msg.sender, swapAmt),
+        ERC20(buyToken).transfer(
+            msg.sender,
+            swapAmt
+        ),
         "Output transfer failed"
     );
 
@@ -102,10 +101,15 @@ contract AMM is AccessControl{
         swapAmt
     );
 
-		uint256 new_invariant = ERC20(tokenA).balanceOf(address(this))*ERC20(tokenB).balanceOf(address(this));
-		require( new_invariant >= invariant, 'Bad trade' );
-		invariant = new_invariant;
-	}
+    // Update the invariant
+    uint256 new_invariant =
+        ERC20(tokenA).balanceOf(address(this)) *
+        ERC20(tokenB).balanceOf(address(this));
+
+    require(new_invariant >= invariant, "Bad trade");
+
+    invariant = new_invariant;
+}
 
 	/*
 		Use the ERC20 transferFrom to "pull" amtA of tokenA and amtB of tokenB from the sender
