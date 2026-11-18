@@ -1,66 +1,154 @@
+
 from web3 import Web3
 from web3.providers.rpc import HTTPProvider
-from web3.middleware import ExtraDataToPOAMiddleware #Necessary for POA chains
+from web3.middleware import ExtraDataToPOAMiddleware
 from pathlib import Path
 import json
 from datetime import datetime
 import pandas as pd
 
 
-def scan_blocks(chain, start_block, end_block, contract_address, eventfile='deposit_logs.csv'):
-    """
-    chain - string (Either 'bsc' or 'avax')
-    start_block - integer first block to scan
-    end_block - integer last block to scan
-    contract_address - the address of the deployed contract
+def scan_blocks(chain, start_block, end_block,
+                contract_address,
+                eventfile='deposit_logs.csv'):
 
-	This function reads "Deposit" events from the specified contract, 
-	and writes information about the events to the file "deposit_logs.csv"
-    """
+    # Connect to the blockchain
     if chain == 'avax':
-        api_url = f"https://api.avax-test.network/ext/bc/C/rpc" #AVAX C-chain testnet
+        api_url = "https://api.avax-test.network/ext/bc/C/rpc"
 
-    if chain == 'bsc':
-        api_url = f"https://data-seed-prebsc-1-s1.binance.org:8545/" #BSC testnet
+    elif chain == 'bsc':
+        api_url = "https://data-seed-prebsc-1-s1.binance.org:8545/"
 
-    if chain in ['avax','bsc']:
-        w3 = Web3(Web3.HTTPProvider(api_url))
-        # inject the poa compatibility middleware to the innermost layer
-        w3.middleware_onion.inject(ExtraDataToPOAMiddleware, layer=0)
     else:
-        w3 = Web3(Web3.HTTPProvider(api_url))
+        raise ValueError("Invalid chain")
 
-    DEPOSIT_ABI = json.loads('[ { "anonymous": false, "inputs": [ { "indexed": true, "internalType": "address", "name": "token", "type": "address" }, { "indexed": true, "internalType": "address", "name": "recipient", "type": "address" }, { "indexed": false, "internalType": "uint256", "name": "amount", "type": "uint256" } ], "name": "Deposit", "type": "event" }]')
-    contract = w3.eth.contract(address=contract_address, abi=DEPOSIT_ABI)
+    w3 = Web3(Web3.HTTPProvider(api_url))
 
-    arg_filter = {}
+    w3.middleware_onion.inject(
+        ExtraDataToPOAMiddleware, layer=0
+    )
 
+    # Deposit event ABI
+    DEPOSIT_ABI = json.loads('''
+    [
+        {
+            "anonymous": false,
+            "inputs": [
+                {
+                    "indexed": true,
+                    "internalType": "address",
+                    "name": "token",
+                    "type": "address"
+                },
+                {
+                    "indexed": true,
+                    "internalType": "address",
+                    "name": "recipient",
+                    "type": "address"
+                },
+                {
+                    "indexed": false,
+                    "internalType": "uint256",
+                    "name": "amount",
+                    "type": "uint256"
+                }
+            ],
+            "name": "Deposit",
+            "type": "event"
+        }
+    ]
+    ''')
+
+    contract = w3.eth.contract(
+        address=Web3.to_checksum_address(contract_address),
+        abi=DEPOSIT_ABI
+    )
+
+    # Resolve latest block
     if start_block == "latest":
         start_block = w3.eth.get_block_number()
+
     if end_block == "latest":
         end_block = w3.eth.get_block_number()
 
+    # Validate block range
     if end_block < start_block:
-        print( f"Error end_block < start_block!" )
-        print( f"end_block = {end_block}" )
-        print( f"start_block = {start_block}" )
+        print("Error end_block < start_block!")
+        return
 
     if start_block == end_block:
-        print( f"Scanning block {start_block} on {chain}" )
+        print(f"Scanning block {start_block} on {chain}")
     else:
-        print( f"Scanning blocks {start_block} - {end_block} on {chain}" )
+        print(
+            f"Scanning blocks {start_block} - "
+            f"{end_block} on {chain}"
+        )
 
-    if end_block - start_block < 30:
-        event_filter = contract.events.Deposit.create_filter(from_block=start_block,to_block=end_block,argument_filters=arg_filter)
-       
-        #print( f"Got {len(events)} entries for block {block_num}" )
-        # TODO YOUR CODE HERE
-        process_events(events)
-    else:
-        for block_num in range(start_block,end_block+1):
-            event_filter = contract.events.Deposit.create_filter(from_block=block_num,to_block=block_num,argument_filters=arg_filter)
-        
-            #print( f"Got {len(events)} entries for block {block_num}" )
-            # TODO YOUR CODE HERE
-            process_events(events)
-            
+    # Store deposit events
+    deposit_data = []
+
+    # Scan blocks in batches of 30
+    # Use get_logs instead of create_filter
+    for first_block in range(start_block, end_block + 1, 30):
+
+        last_block = min(first_block + 29, end_block)
+
+        events = contract.events.Deposit.get_logs(
+            from_block=first_block,
+            to_block=last_block,
+            argument_filters={}
+        )
+
+        # Process Deposit events
+        for evt in events:
+
+            data = {
+                'chain': chain,
+                'token': evt.args['token'],
+                'recipient': evt.args['recipient'],
+                'amount': evt.args['amount'],
+                'transactionHash': Web3.to_hex(
+                    evt.transactionHash
+                ),
+                'address': evt.address,
+                'date': datetime.now().strftime(
+                    "%m/%d/%Y %H:%M:%S"
+                )
+            }
+
+            deposit_data.append(data)
+
+    # Required CSV columns
+    columns = [
+        'chain',
+        'token',
+        'recipient',
+        'amount',
+        'transactionHash',
+        'address',
+        'date'
+    ]
+
+    # Create DataFrame
+    df = pd.DataFrame(
+        deposit_data,
+        columns=columns
+    )
+
+    # Determine whether to write CSV header
+    file_path = Path(eventfile)
+
+    write_header = (
+        not file_path.exists()
+        or file_path.stat().st_size == 0
+    )
+
+    # Append events to CSV
+    df.to_csv(
+        eventfile,
+        mode='a',
+        header=write_header,
+        index=False
+    )
+
+    print(f"Recorded {len(deposit_data)} Deposit events")
