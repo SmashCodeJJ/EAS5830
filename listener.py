@@ -63,35 +63,4 @@ def scan_blocks(chain, start_block, end_block, contract_address, eventfile='depo
             #print( f"Got {len(events)} entries for block {block_num}" )
             # TODO YOUR CODE HERE
             process_events(events)
-            columns = [
-                'chain',
-                'token',
-                'recipient',
-                'amount',
-                'transactionHash',
-                'address',
-                'date'
-            ]
-
-            df = pd.DataFrame(
-                deposit_data,
-                columns=columns
-            )
-
-            # Check whether the CSV already contains data
-            file_path = Path(eventfile)
-
-            write_header = (
-                not file_path.exists()
-                or file_path.stat().st_size == 0
-            )
-
-            # Append events without duplicating the CSV header
-            df.to_csv(
-                eventfile,
-                mode='a',
-                header=write_header,
-                index=False
-            )
-
-            print(f"Recorded {len(deposit_data)} Deposit events")
+            
