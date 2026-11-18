@@ -12,7 +12,7 @@ def scan_blocks(chain, start_block, end_block,
                 contract_address,
                 eventfile='deposit_logs.csv'):
 
-    # Connect to the blockchain
+    # Connect to the correct blockchain
     if chain == 'avax':
         api_url = "https://api.avax-test.network/ext/bc/C/rpc"
 
@@ -59,12 +59,13 @@ def scan_blocks(chain, start_block, end_block,
     ]
     ''')
 
+    # Create contract instance
     contract = w3.eth.contract(
         address=Web3.to_checksum_address(contract_address),
         abi=DEPOSIT_ABI
     )
 
-    # Resolve latest block
+    # Resolve latest block numbers
     if start_block == "latest":
         start_block = w3.eth.get_block_number()
 
@@ -78,17 +79,17 @@ def scan_blocks(chain, start_block, end_block,
 
     if start_block == end_block:
         print(f"Scanning block {start_block} on {chain}")
+
     else:
         print(
             f"Scanning blocks {start_block} - "
             f"{end_block} on {chain}"
         )
 
-    # Store deposit events
+    # Store Deposit events
     deposit_data = []
 
-    # Scan blocks in batches of 30
-    # Use get_logs instead of create_filter
+    # Scan blockchain in batches of 30 blocks
     for first_block in range(start_block, end_block + 1, 30):
 
         last_block = min(first_block + 29, end_block)
@@ -99,7 +100,7 @@ def scan_blocks(chain, start_block, end_block,
             argument_filters={}
         )
 
-        # Process Deposit events
+        # Extract event information
         for evt in events:
 
             data = {
@@ -107,9 +108,7 @@ def scan_blocks(chain, start_block, end_block,
                 'token': evt.args['token'],
                 'recipient': evt.args['recipient'],
                 'amount': evt.args['amount'],
-                'transactionHash': Web3.to_hex(
-                    evt.transactionHash
-                ),
+                'transactionHash': evt.transactionHash.hex().removeprefix("0x"),
                 'address': evt.address,
                 'date': datetime.now().strftime(
                     "%m/%d/%Y %H:%M:%S"
@@ -135,7 +134,7 @@ def scan_blocks(chain, start_block, end_block,
         columns=columns
     )
 
-    # Determine whether to write CSV header
+    # Check whether the CSV file already exists
     file_path = Path(eventfile)
 
     write_header = (
@@ -143,7 +142,7 @@ def scan_blocks(chain, start_block, end_block,
         or file_path.stat().st_size == 0
     )
 
-    # Append events to CSV
+    # Append events without duplicating the header
     df.to_csv(
         eventfile,
         mode='a',
